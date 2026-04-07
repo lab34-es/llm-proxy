@@ -282,16 +282,6 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		return h.renderError(c, "usage", "Failed to load usage: "+err.Error())
 	}
 
-	// Calculate totals from the current page
-	var promptTotal, completionTotal, allTotal int
-	if result.Records != nil {
-		for _, r := range result.Records {
-			promptTotal += r.PromptTokens
-			completionTotal += r.CompletionTokens
-			allTotal += r.TotalTokens
-		}
-	}
-
 	totalPages := (result.Total + perPage - 1) / perPage
 	if totalPages < 1 {
 		totalPages = 1
@@ -324,9 +314,9 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		Keys:                  keys,
 		Providers:             providers,
 		TotalRecords:          result.Total,
-		TotalPromptTokens:     promptTotal,
-		TotalCompletionTokens: completionTotal,
-		TotalAllTokens:        allTotal,
+		TotalPromptTokens:     result.PromptTokens,
+		TotalCompletionTokens: result.CompletionTokens,
+		TotalAllTokens:        result.TotalTokens,
 		FilterKeyID:           q.APIKeyID,
 		FilterProviderID:      q.ProviderID,
 		FilterStart:           filterStart,
