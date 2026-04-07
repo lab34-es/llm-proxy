@@ -91,11 +91,11 @@
 <nav>
   <ul>
     {{if gt .Page 1}}
-    <li><a href="?{{.PaginationQuery (sub .Page 1)}}">Previous</a></li>
+    <li><a href="?{{call .PaginationQuery (sub .Page 1)}}">Previous</a></li>
     {{end}}
     <li><small>Page {{.Page}} of {{.TotalPages}}</small></li>
     {{if lt .Page .TotalPages}}
-    <li><a href="?{{.PaginationQuery (add .Page 1)}}">Next</a></li>
+    <li><a href="?{{call .PaginationQuery (add .Page 1)}}">Next</a></li>
     {{end}}
   </ul>
 </nav>

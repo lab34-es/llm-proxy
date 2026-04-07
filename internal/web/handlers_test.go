@@ -182,6 +182,34 @@ func TestDeleteProvider_Dashboard(t *testing.T) {
 	assert.Equal(t, http.StatusFound, rec.Code)
 }
 
+func TestDeleteProvider_Dashboard_WithUsageAndEvents(t *testing.T) {
+	h, ps, ks, us, e := setupDashboard(t)
+
+	p, err := ps.Create("with-usage", "https://test.com", "key")
+	require.NoError(t, err)
+	k, _, err := ks.Create("k1", p.ID, 60)
+	require.NoError(t, err)
+	err = us.Record(k.ID, p.ID, "gpt-4", 100, 50, 150)
+	require.NoError(t, err)
+
+	// Also create a guardrail event referencing the api key
+	g, err := h.guardrails.Create("test-pattern", "reject", "")
+	require.NoError(t, err)
+	_, err = h.guardrailEvents.Record(g.ID, k.ID, "test-pattern", "reject", "test-input")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/dashboard/providers/"+p.ID+"/delete", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(p.ID)
+
+	err = h.DeleteProvider(c)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Contains(t, rec.Header().Get("Location"), "Provider+deleted")
+}
+
 func TestDeleteProvider_Dashboard_NotFound(t *testing.T) {
 	h, _, _, _, e := setupDashboard(t)
 

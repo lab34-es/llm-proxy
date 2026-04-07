@@ -2,6 +2,8 @@ package web
 
 import (
 	"fmt"
+	"html/template"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -111,6 +113,7 @@ func (h *DashboardHandler) CreateProvider(c echo.Context) error {
 func (h *DashboardHandler) DeleteProvider(c echo.Context) error {
 	id := c.Param("id")
 	if err := h.providers.Delete(id); err != nil {
+		log.Printf("dashboard: failed to delete provider %s: %v", id, err)
 		return c.Redirect(http.StatusFound, "/dashboard/providers?flash=Failed+to+delete+provider")
 	}
 	return c.Redirect(http.StatusFound, "/dashboard/providers?flash=Provider+deleted")
@@ -238,7 +241,7 @@ type usagePageData struct {
 	FilterEnd             string
 	Page                  int
 	TotalPages            int
-	PaginationQuery       func(int) string
+	PaginationQuery       func(int) template.URL
 }
 
 func (h *DashboardHandler) UsagePage(c echo.Context) error {
@@ -279,16 +282,6 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		return h.renderError(c, "usage", "Failed to load usage: "+err.Error())
 	}
 
-	// Calculate totals from the current page
-	var promptTotal, completionTotal, allTotal int
-	if result.Records != nil {
-		for _, r := range result.Records {
-			promptTotal += r.PromptTokens
-			completionTotal += r.CompletionTokens
-			allTotal += r.TotalTokens
-		}
-	}
-
 	totalPages := (result.Total + perPage - 1) / perPage
 	if totalPages < 1 {
 		totalPages = 1
@@ -297,7 +290,7 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 	keys, _ := h.keys.List()
 	providers, _ := h.providers.List()
 
-	paginationQuery := func(p int) string {
+	paginationQuery := func(p int) template.URL {
 		qs := fmt.Sprintf("page=%d", p)
 		if q.APIKeyID != "" {
 			qs += "&api_key_id=" + q.APIKeyID
@@ -311,7 +304,7 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		if filterEnd != "" {
 			qs += "&end=" + filterEnd
 		}
-		return qs
+		return template.URL(qs)
 	}
 
 	return c.Render(http.StatusOK, "usage", usagePageData{
@@ -321,9 +314,9 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		Keys:                  keys,
 		Providers:             providers,
 		TotalRecords:          result.Total,
-		TotalPromptTokens:     promptTotal,
-		TotalCompletionTokens: completionTotal,
-		TotalAllTokens:        allTotal,
+		TotalPromptTokens:     result.PromptTokens,
+		TotalCompletionTokens: result.CompletionTokens,
+		TotalAllTokens:        result.TotalTokens,
 		FilterKeyID:           q.APIKeyID,
 		FilterProviderID:      q.ProviderID,
 		FilterStart:           filterStart,
