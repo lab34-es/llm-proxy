@@ -1,17 +1,19 @@
 # LLM Proxy
 
-An OpenAI-compatible LLM proxy that routes requests to any OpenAI-compatible backend. Manages upstream provider credentials, issues proxy API keys for clients, enforces per-key rate limits, and tracks token usage. All credentials are stored in a SQLite database.
+An OpenAI-compatible LLM proxy that routes requests to any OpenAI-compatible backend. Written in Go. SQLite for storage.
 
 ## Features
 
 - **OpenAI-compatible API** -- drop-in replacement for any OpenAI client library
 - **Streaming (SSE)** -- full support for streamed chat completions
-- **Provider management** -- register any number of OpenAI-compatible upstream backends
-- **Client API keys** -- issue `llmp-` prefixed proxy keys so clients never see upstream credentials
-- **Rate limiting** -- configurable per-key requests-per-minute limits (in-memory token bucket)
-- **Usage tracking** -- records prompt, completion, and total tokens per request
+- **Multi-provider management** -- register any number of upstream backends
+- **Proxy API key issuance** -- `llmp-` prefixed keys so clients never see upstream credentials
+- **Per-key rate limiting** -- configurable requests-per-minute limits
+- **Token usage tracking** -- records prompt, completion, and total tokens per request
 - **Swagger UI** -- interactive API documentation at `/docs`
-- **API-first** -- OpenAPI 3.1 spec is the source of truth, embedded in the binary
+- **OpenAPI 3.1 spec** -- source of truth, embedded in the binary
+- **Dashboard** -- web UI for monitoring usage and managing resources
+- **Guardrails** -- configurable safety rules to change or reject LLM interactions
 
 ## Quick start
 
@@ -33,90 +35,7 @@ All configuration is via environment variables:
 |---|---|---|
 | `ADDR` | `:8080` | Server listen address |
 | `DSN` | `llm-proxy.db` | SQLite database file path |
-| `ADMIN_TOKEN` | *(required)* | Bearer token for `/admin/*` endpoints |
-
-## Usage
-
-### 1. Register an upstream provider
-
-```bash
-curl -X POST http://localhost:8080/admin/providers \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "openai",
-    "base_url": "https://api.openai.com",
-    "api_key": "sk-..."
-  }'
-```
-
-### 2. Create a proxy API key
-
-```bash
-curl -X POST http://localhost:8080/admin/keys \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-app",
-    "provider_id": "<provider-id-from-step-1>",
-    "rate_limit_rpm": 60
-  }'
-```
-
-The response includes a `key` field (e.g. `llmp-abc123...`). This is shown **only once**.
-
-### 3. Use the proxy as an OpenAI endpoint
-
-```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer llmp-abc123..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-Or with any OpenAI-compatible client library by pointing the base URL to the proxy:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    api_key="llmp-abc123...",
-    base_url="http://localhost:8080/v1",
-)
-
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Hello!"}],
-)
-```
-
-### 4. Query usage
-
-```bash
-curl "http://localhost:8080/admin/usage?limit=10" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-## API endpoints
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/docs` | Public | Swagger UI |
-| `GET` | `/openapi.yaml` | Public | Raw OpenAPI spec |
-| `POST` | `/admin/providers` | Admin | Register upstream provider |
-| `GET` | `/admin/providers` | Admin | List providers |
-| `GET` | `/admin/providers/:id` | Admin | Get provider |
-| `PUT` | `/admin/providers/:id` | Admin | Update provider |
-| `DELETE` | `/admin/providers/:id` | Admin | Delete provider |
-| `POST` | `/admin/keys` | Admin | Create proxy API key |
-| `GET` | `/admin/keys` | Admin | List proxy API keys |
-| `DELETE` | `/admin/keys/:id` | Admin | Revoke API key |
-| `GET` | `/admin/usage` | Admin | Query usage records |
-| `POST` | `/v1/chat/completions` | Proxy key | Chat completions (streaming + non-streaming) |
-| `GET` | `/v1/models` | Proxy key | List upstream models |
+| `ADMIN_TOKEN` | *(required)* | Bearer token for `/admin/*` endpoints and dashboard login |
 
 ## Project structure
 
@@ -124,6 +43,8 @@ curl "http://localhost:8080/admin/usage?limit=10" \
 llm-proxy/
 ├── openapi.yaml                    # OpenAPI 3.1 spec (embedded at compile time)
 ├── main.go                         # Entrypoint
+├── Dockerfile                      # Container image build
+├── docker-compose.yml              # Local dev / deployment
 └── internal/
     ├── config/config.go            # Environment-based configuration
     ├── db/
@@ -133,7 +54,9 @@ llm-proxy/
     ├── store/
     │   ├── provider.go             # Provider CRUD
     │   ├── apikey.go               # API key create/lookup/revoke
-    │   └── usage.go                # Usage recording and queries
+    │   ├── usage.go                # Usage recording and queries
+    │   ├── guardrail.go            # Guardrail rule CRUD
+    │   └── guardrail_event.go      # Guardrail event logging
     ├── middleware/
     │   ├── auth.go                 # Admin + proxy key authentication
     │   └── ratelimit.go            # Per-key rate limiting
@@ -141,8 +64,40 @@ llm-proxy/
     │   ├── admin.go                # Admin API handlers
     │   ├── proxy.go                # Proxy API handlers
     │   └── docs.go                 # Swagger UI + spec serving
-    └── proxy/forwarder.go          # Upstream request forwarding
+    ├── proxy/forwarder.go          # Upstream request forwarding + guardrail enforcement
+    └── web/
+        ├── handlers.go             # Dashboard route handlers
+        ├── renderer.go             # Template rendering
+        ├── session.go              # Session management
+        ├── templates/              # HTML templates (layout, login, usage, etc.)
+        └── static/                 # CSS and JS assets
 ```
+
+## Benchmarks
+
+Benchmarks run against a realistic environment with **100 providers**, **100 API keys**, and **100 guardrail rules** loaded in the database. The mock upstream responds instantly, so results isolate proxy overhead.
+
+```bash
+go test -bench=. -benchmem -benchtime=3s ./internal/proxy/ -run='^$'
+```
+
+Results on Apple M3 Max (arm64):
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|--:|--:|--:|
+| ForwardChatCompletion_NonStreaming | 484,511 | 517,372 | 3,894 |
+| ForwardChatCompletion_Streaming | 538,411 | 574,631 | 3,888 |
+| APIKeyLookup | 7,806 | 1,576 | 43 |
+| GuardrailEvaluation | 480,464 | 461,046 | 3,659 |
+| UsageRecording | 23,312 | 720 | 17 |
+| AdminListProviders | 251,850 | 133,757 | 2,447 |
+
+**Key takeaways:**
+
+- **API key lookup** (SHA-256 hash + SQLite query among 100 keys) completes in ~8 us.
+- **Usage recording** (SQLite INSERT) takes ~23 us per request.
+- **Guardrail evaluation** with 100 compiled regex patterns is the dominant cost in the proxy path (~480 us). This cost is per-request since patterns are compiled on each evaluation.
+- **Full chat completion** round-trip (parse, guardrails, upstream call, response copy, usage write) stays under 0.5 ms for non-streaming and 0.54 ms for streaming, excluding actual upstream latency.
 
 ## License
 

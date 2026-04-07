@@ -49,6 +49,9 @@ var funcMap = template.FuncMap{
 		}
 		return s
 	},
+	"renderTime": func() string {
+		return ""
+	},
 }
 
 // NewRenderer parses embedded templates and returns a renderer.
@@ -60,6 +63,7 @@ func NewRenderer() *TemplateRenderer {
 		"providers":  {"templates/layout.tmpl", "templates/providers.tmpl"},
 		"keys":       {"templates/layout.tmpl", "templates/keys.tmpl"},
 		"usage":      {"templates/layout.tmpl", "templates/usage.tmpl"},
+		"guardrails": {"templates/layout.tmpl", "templates/guardrails.tmpl"},
 		"playground": {"templates/layout.tmpl", "templates/playground.tmpl"},
 	}
 
@@ -79,19 +83,35 @@ var layoutPages = map[string]bool{
 	"providers":  true,
 	"keys":       true,
 	"usage":      true,
+	"guardrails": true,
 	"playground": true,
 }
 
 // Render satisfies the echo.Renderer interface.
 // Pass the page name (e.g. "providers", "login"). For layout-wrapped pages
 // the renderer executes the "layout" define from that page's template set.
+// It injects a RenderTime field into the template data measuring execution time.
 func (r *TemplateRenderer) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
 	t, ok := r.templates[name]
 	if !ok {
 		return fmt.Errorf("template %q not found", name)
 	}
-	if layoutPages[name] {
-		return t.ExecuteTemplate(w, "layout", data)
+
+	start := time.Now()
+
+	// Clone the template to inject a per-request renderTime function.
+	clone, err := t.Clone()
+	if err != nil {
+		return err
 	}
-	return t.ExecuteTemplate(w, name, data)
+	clone.Funcs(template.FuncMap{
+		"renderTime": func() string {
+			return time.Since(start).String()
+		},
+	})
+
+	if layoutPages[name] {
+		return clone.ExecuteTemplate(w, "layout", data)
+	}
+	return clone.ExecuteTemplate(w, name, data)
 }

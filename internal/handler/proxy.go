@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/lab34/llm-proxy/internal/middleware"
@@ -33,6 +34,16 @@ func (h *ProxyHandler) ChatCompletion(c echo.Context) error {
 	}
 
 	if err := h.forwarder.ForwardChatCompletion(c.Response().Writer, c.Request(), provider, apiKey); err != nil {
+		var grErr *proxy.GuardrailRejectedError
+		if errors.As(err, &grErr) {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": grErr.Error(),
+					"type":    "guardrail_rejected",
+					"code":    "guardrail_rejected",
+				},
+			})
+		}
 		return echo.NewHTTPError(http.StatusBadGateway, err.Error())
 	}
 	return nil

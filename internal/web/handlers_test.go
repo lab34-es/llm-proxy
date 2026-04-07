@@ -23,8 +23,10 @@ func setupDashboard(t *testing.T) (*DashboardHandler, *store.ProviderStore, *sto
 	ps := store.NewProviderStore(database)
 	ks := store.NewAPIKeyStore(database)
 	us := store.NewUsageStore(database)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
 
-	h := NewDashboardHandler(ps, ks, us, "admin-token", "secret")
+	h := NewDashboardHandler(ps, ks, us, gs, ges, "admin-token", "secret")
 
 	e := echo.New()
 	e.Renderer = NewRenderer()

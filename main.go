@@ -38,13 +38,15 @@ func main() {
 	providerStore := store.NewProviderStore(database)
 	keyStore := store.NewAPIKeyStore(database)
 	usageStore := store.NewUsageStore(database)
+	guardrailStore := store.NewGuardrailStore(database)
+	guardrailEventStore := store.NewGuardrailEventStore(database)
 
 	// Handlers.
-	adminH := handler.NewAdminHandler(providerStore, keyStore, usageStore)
-	forwarder := proxy.NewForwarder(usageStore)
+	adminH := handler.NewAdminHandler(providerStore, keyStore, usageStore, guardrailStore, guardrailEventStore)
+	forwarder := proxy.NewForwarder(usageStore, guardrailStore, guardrailEventStore)
 	proxyH := handler.NewProxyHandler(forwarder, providerStore)
 	docsH := handler.NewDocsHandler(specBytes)
-	dashH := web.NewDashboardHandler(providerStore, keyStore, usageStore, cfg.AdminToken, cfg.SessionSecret)
+	dashH := web.NewDashboardHandler(providerStore, keyStore, usageStore, guardrailStore, guardrailEventStore, cfg.AdminToken, cfg.SessionSecret)
 
 	// Middleware.
 	rateLimiter := middleware.NewRateLimiter()
@@ -80,6 +82,10 @@ func main() {
 	dashAuth.POST("/keys", dashH.CreateKey)
 	dashAuth.POST("/keys/:id/revoke", dashH.RevokeKey)
 	dashAuth.GET("/usage", dashH.UsagePage)
+	dashAuth.GET("/guardrails", dashH.GuardrailsPage)
+	dashAuth.POST("/guardrails", dashH.CreateGuardrail)
+	dashAuth.POST("/guardrails/:id/delete", dashH.DeleteGuardrail)
+	dashAuth.POST("/guardrail-events/:id/delete", dashH.DeleteGuardrailEvent)
 	dashAuth.GET("/playground", dashH.PlaygroundPage)
 
 	// ── Admin routes (admin token auth) ────────────────────────────────
@@ -96,6 +102,15 @@ func main() {
 	admin.DELETE("/keys/:id", adminH.RevokeAPIKey)
 
 	admin.GET("/usage", adminH.QueryUsage)
+
+	admin.POST("/guardrails", adminH.CreateGuardrail)
+	admin.GET("/guardrails", adminH.ListGuardrails)
+	admin.GET("/guardrails/:id", adminH.GetGuardrail)
+	admin.DELETE("/guardrails/:id", adminH.DeleteGuardrail)
+
+	admin.GET("/guardrail-events", adminH.ListGuardrailEvents)
+	admin.GET("/guardrail-events/:id", adminH.GetGuardrailEvent)
+	admin.DELETE("/guardrail-events/:id", adminH.DeleteGuardrailEvent)
 
 	// ── Proxy routes (proxy API key auth + rate limit) ─────────────────
 	v1 := e.Group("/v1",
