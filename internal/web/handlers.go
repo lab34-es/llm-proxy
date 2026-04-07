@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"regexp"
@@ -240,7 +241,7 @@ type usagePageData struct {
 	FilterEnd             string
 	Page                  int
 	TotalPages            int
-	PaginationQuery       func(int) string
+	PaginationQuery       func(int) template.URL
 }
 
 func (h *DashboardHandler) UsagePage(c echo.Context) error {
@@ -299,7 +300,7 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 	keys, _ := h.keys.List()
 	providers, _ := h.providers.List()
 
-	paginationQuery := func(p int) string {
+	paginationQuery := func(p int) template.URL {
 		qs := fmt.Sprintf("page=%d", p)
 		if q.APIKeyID != "" {
 			qs += "&api_key_id=" + q.APIKeyID
@@ -313,7 +314,7 @@ func (h *DashboardHandler) UsagePage(c echo.Context) error {
 		if filterEnd != "" {
 			qs += "&end=" + filterEnd
 		}
-		return qs
+		return template.URL(qs)
 	}
 
 	return c.Render(http.StatusOK, "usage", usagePageData{
