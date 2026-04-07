@@ -3,9 +3,8 @@ name: Build and publish Docker image
 on:
   push:
     branches: [main]
-    tags: ["v*"]
-  pull_request:
-    branches: [main]
+  release:
+    types: [published]
 
 env:
   REGISTRY: ghcr.io
@@ -27,7 +26,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -40,17 +38,18 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
+            # Push to main: "dev" + "sha-xxxx"
+            type=raw,value=dev,enable=${{ github.event_name == 'push' }}
+            type=sha,enable=${{ github.event_name == 'push' }}
+            # Release: "latest" + version from tag
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
