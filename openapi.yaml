@@ -1,0 +1,573 @@
+openapi: 3.1.0
+info:
+  title: LLM Proxy
+  description: |
+    An OpenAI-compatible LLM proxy that routes requests to any OpenAI-compatible
+    backend. Manages upstream provider credentials, issues proxy API keys for
+    clients, enforces rate limits, and tracks token usage.
+  version: 1.0.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Providers
+    description: Manage upstream LLM provider configurations
+  - name: API Keys
+    description: Manage proxy API keys issued to clients
+  - name: Usage
+    description: Query token usage and cost data
+  - name: Proxy
+    description: OpenAI-compatible endpoints forwarded to upstream providers
+
+paths:
+  # ── Admin: Providers ──────────────────────────────────────────────────
+  /admin/providers:
+    get:
+      tags: [Providers]
+      summary: List providers
+      operationId: listProviders
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: List of registered providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Provider"
+    post:
+      tags: [Providers]
+      summary: Register a new upstream provider
+      operationId: createProvider
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderRequest"
+      responses:
+        "201":
+          description: Provider created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /admin/providers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProviderID"
+    get:
+      tags: [Providers]
+      summary: Get a provider
+      operationId: getProvider
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: Provider details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Providers]
+      summary: Update a provider
+      operationId: updateProvider
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProviderRequest"
+      responses:
+        "200":
+          description: Provider updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Providers]
+      summary: Delete a provider
+      operationId: deleteProvider
+      security:
+        - AdminToken: []
+      responses:
+        "204":
+          description: Provider deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin: API Keys ───────────────────────────────────────────────────
+  /admin/keys:
+    get:
+      tags: [API Keys]
+      summary: List proxy API keys
+      operationId: listAPIKeys
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: List of proxy API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIKey"
+    post:
+      tags: [API Keys]
+      summary: Create a proxy API key
+      operationId: createAPIKey
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+      responses:
+        "201":
+          description: API key created. The raw key is returned only once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /admin/keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/APIKeyID"
+    delete:
+      tags: [API Keys]
+      summary: Revoke an API key
+      operationId: revokeAPIKey
+      security:
+        - AdminToken: []
+      responses:
+        "204":
+          description: API key revoked
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin: Usage ──────────────────────────────────────────────────────
+  /admin/usage:
+    get:
+      tags: [Usage]
+      summary: Query usage records
+      operationId: queryUsage
+      security:
+        - AdminToken: []
+      parameters:
+        - name: api_key_id
+          in: query
+          schema:
+            type: string
+        - name: provider_id
+          in: query
+          schema:
+            type: string
+        - name: start
+          in: query
+          description: Start of date range (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          description: End of date range (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Usage records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageResponse"
+
+  # ── Proxy: OpenAI-compatible ──────────────────────────────────────────
+  /v1/chat/completions:
+    post:
+      tags: [Proxy]
+      summary: Create a chat completion (proxied)
+      operationId: createChatCompletion
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: |
+            Chat completion response. If `stream: true` was set, the response
+            is a stream of `text/event-stream` server-sent events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionResponse"
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/models:
+    get:
+      tags: [Proxy]
+      summary: List available models
+      operationId: listModels
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+
+  # ── Docs ──────────────────────────────────────────────────────────────
+  /openapi.yaml:
+    get:
+      summary: Raw OpenAPI specification
+      operationId: getOpenAPISpec
+      responses:
+        "200":
+          description: The OpenAPI YAML spec
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    AdminToken:
+      type: http
+      scheme: bearer
+      description: Admin token set via ADMIN_TOKEN env var
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Proxy API key issued via /admin/keys
+
+  parameters:
+    ProviderID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    APIKeyID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    # ── Provider ────────────────────────────────────────────────────────
+    Provider:
+      type: object
+      required: [id, name, base_url, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: openai
+        base_url:
+          type: string
+          format: uri
+          example: https://api.openai.com
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProviderRequest:
+      type: object
+      required: [name, base_url, api_key]
+      properties:
+        name:
+          type: string
+          example: openai
+        base_url:
+          type: string
+          format: uri
+          example: https://api.openai.com
+        api_key:
+          type: string
+          description: Upstream provider API key
+          example: sk-...
+
+    UpdateProviderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        api_key:
+          type: string
+
+    # ── API Key ─────────────────────────────────────────────────────────
+    APIKey:
+      type: object
+      required: [id, name, provider_id, rate_limit_rpm, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: my-app-key
+        provider_id:
+          type: string
+          format: uuid
+        rate_limit_rpm:
+          type: integer
+          description: Requests per minute (0 = unlimited)
+          example: 60
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    APIKeyCreated:
+      type: object
+      required: [id, name, key, provider_id, rate_limit_rpm, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        key:
+          type: string
+          description: The raw API key. Shown only once.
+          example: llmp-abc123...
+        provider_id:
+          type: string
+          format: uuid
+        rate_limit_rpm:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    CreateAPIKeyRequest:
+      type: object
+      required: [name, provider_id]
+      properties:
+        name:
+          type: string
+          example: my-app-key
+        provider_id:
+          type: string
+          format: uuid
+        rate_limit_rpm:
+          type: integer
+          description: Requests per minute (0 = unlimited)
+          default: 0
+
+    # ── Usage ───────────────────────────────────────────────────────────
+    UsageRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        api_key_id:
+          type: string
+          format: uuid
+        provider_id:
+          type: string
+          format: uuid
+        model:
+          type: string
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    UsageResponse:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageRecord"
+        total:
+          type: integer
+          description: Total number of matching records
+
+    # ── OpenAI-compatible types ─────────────────────────────────────────
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          example: gpt-4o
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+        max_tokens:
+          type: integer
+        top_p:
+          type: number
+        frequency_penalty:
+          type: number
+        presence_penalty:
+          type: number
+        stop:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+        content:
+          type: string
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: "#/components/schemas/ChatMessage"
+              finish_reason:
+                type: string
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
+    ModelsResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              object:
+                type: string
+                example: model
+              owned_by:
+                type: string
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type]
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+              nullable: true

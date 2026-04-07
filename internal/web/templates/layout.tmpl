@@ -1,0 +1,61 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} — LLM Proxy</title>
+  <link rel="stylesheet" href="/dashboard/static/pico.min.css">
+  <style>
+    body { min-height: 100vh; }
+    nav ul li a[aria-current="page"] { font-weight: bold; text-decoration: underline; }
+    .flash { padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+    .flash-success { background: var(--pico-ins-color); }
+    .flash-error { background: var(--pico-del-color); }
+    .mono { font-family: monospace; font-size: 0.85em; }
+    .text-right { text-align: right; }
+    .key-display { 
+      background: var(--pico-code-background-color); 
+      padding: 0.5rem 1rem; 
+      border-radius: 4px; 
+      font-family: monospace; 
+      word-break: break-all;
+      margin: 1rem 0;
+    }
+    details[open] summary { margin-bottom: 1rem; }
+    td.actions { white-space: nowrap; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: 600;
+    }
+    .badge-active { background: var(--pico-ins-color); }
+    .badge-revoked { background: var(--pico-del-color); }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { padding: 1rem; border: 1px solid var(--pico-muted-border-color); border-radius: 8px; text-align: center; }
+    .stat-card h3 { margin: 0; font-size: 2rem; }
+    .stat-card small { color: var(--pico-muted-color); }
+  </style>
+</head>
+<body>
+  <nav class="container-fluid">
+    <ul>
+      <li><strong>LLM Proxy</strong></li>
+    </ul>
+    <ul>
+      <li><a href="/dashboard/providers" {{if eq .Active "providers"}}aria-current="page"{{end}}>Providers</a></li>
+      <li><a href="/dashboard/keys" {{if eq .Active "keys"}}aria-current="page"{{end}}>API Keys</a></li>
+      <li><a href="/dashboard/usage" {{if eq .Active "usage"}}aria-current="page"{{end}}>Usage</a></li>
+      <li><a href="/dashboard/playground" {{if eq .Active "playground"}}aria-current="page"{{end}}>Playground</a></li>
+      <li><a href="/dashboard/logout">Logout</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    {{if .Flash}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
+    {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+    {{template "content" .}}
+  </main>
+  <script src="/dashboard/static/app.js"></script>
+</body>
+</html>{{end}}

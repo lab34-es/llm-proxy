@@ -1,0 +1,58 @@
+{{define "content"}}
+<h2>Providers</h2>
+
+<details>
+  <summary role="button" class="outline">Add Provider</summary>
+  <form method="POST" action="/dashboard/providers">
+    <div class="grid">
+      <label>
+        Name
+        <input type="text" name="name" placeholder="e.g. OpenAI Production" required>
+      </label>
+      <label>
+        Base URL
+        <input type="url" name="base_url" placeholder="https://api.openai.com" required>
+      </label>
+    </div>
+    <label>
+      API Key
+      <input type="password" name="api_key" placeholder="sk-..." required>
+    </label>
+    <button type="submit">Create Provider</button>
+  </form>
+</details>
+
+{{if .Providers}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Base URL</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Providers}}
+    <tr>
+      <td class="mono">{{shortID .ID}}</td>
+      <td>{{.Name}}</td>
+      <td class="mono">{{.BaseURL}}</td>
+      <td>{{formatTime .CreatedAt}}</td>
+      <td class="actions">
+        <form method="POST" action="/dashboard/providers/{{.ID}}/delete" style="display:inline" 
+              onsubmit="return confirm('Delete provider {{.Name}}? This will also delete all associated API keys.')">
+          <button type="submit" class="outline secondary" style="padding:0.25rem 0.75rem;margin:0">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</figure>
+{{else}}
+<p>No providers configured yet. Add one above to get started.</p>
+{{end}}
+{{end}}

@@ -1,0 +1,107 @@
+{{define "content"}}
+<h2>Usage</h2>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <h3>{{.TotalRecords}}</h3>
+    <small>Total Requests</small>
+  </div>
+  <div class="stat-card">
+    <h3>{{.TotalPromptTokens}}</h3>
+    <small>Prompt Tokens</small>
+  </div>
+  <div class="stat-card">
+    <h3>{{.TotalCompletionTokens}}</h3>
+    <small>Completion Tokens</small>
+  </div>
+  <div class="stat-card">
+    <h3>{{.TotalAllTokens}}</h3>
+    <small>Total Tokens</small>
+  </div>
+</div>
+
+<details>
+  <summary role="button" class="outline">Filters</summary>
+  <form method="GET" action="/dashboard/usage">
+    <div class="grid">
+      <label>
+        API Key
+        <select name="api_key_id">
+          <option value="">All keys</option>
+          {{range .Keys}}
+          <option value="{{.ID}}" {{if eq $.FilterKeyID .ID}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>
+        Provider
+        <select name="provider_id">
+          <option value="">All providers</option>
+          {{range .Providers}}
+          <option value="{{.ID}}" {{if eq $.FilterProviderID .ID}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Start
+        <input type="datetime-local" name="start" value="{{.FilterStart}}">
+      </label>
+      <label>
+        End
+        <input type="datetime-local" name="end" value="{{.FilterEnd}}">
+      </label>
+    </div>
+    <button type="submit">Apply Filters</button>
+  </form>
+</details>
+
+{{if .Records}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Model</th>
+      <th>Key</th>
+      <th>Provider</th>
+      <th class="text-right">Prompt</th>
+      <th class="text-right">Completion</th>
+      <th class="text-right">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Records}}
+    <tr>
+      <td>{{formatTime .CreatedAt}}</td>
+      <td class="mono">{{.Model}}</td>
+      <td class="mono">{{shortID .APIKeyID}}</td>
+      <td class="mono">{{shortID .ProviderID}}</td>
+      <td class="text-right">{{.PromptTokens}}</td>
+      <td class="text-right">{{.CompletionTokens}}</td>
+      <td class="text-right">{{.TotalTokens}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</figure>
+
+{{if gt .TotalPages 1}}
+<nav>
+  <ul>
+    {{if gt .Page 1}}
+    <li><a href="?{{.PaginationQuery (sub .Page 1)}}">Previous</a></li>
+    {{end}}
+    <li><small>Page {{.Page}} of {{.TotalPages}}</small></li>
+    {{if lt .Page .TotalPages}}
+    <li><a href="?{{.PaginationQuery (add .Page 1)}}">Next</a></li>
+    {{end}}
+  </ul>
+</nav>
+{{end}}
+
+{{else}}
+<p>No usage records found.</p>
+{{end}}
+{{end}}

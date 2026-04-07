@@ -1,0 +1,8 @@
+*.db
+*.db-wal
+*.db-shm
+.git
+.github
+.gitignore
+LICENSE
+README.md
