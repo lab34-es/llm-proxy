@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -111,6 +112,7 @@ func (h *DashboardHandler) CreateProvider(c echo.Context) error {
 func (h *DashboardHandler) DeleteProvider(c echo.Context) error {
 	id := c.Param("id")
 	if err := h.providers.Delete(id); err != nil {
+		log.Printf("dashboard: failed to delete provider %s: %v", id, err)
 		return c.Redirect(http.StatusFound, "/dashboard/providers?flash=Failed+to+delete+provider")
 	}
 	return c.Redirect(http.StatusFound, "/dashboard/providers?flash=Provider+deleted")

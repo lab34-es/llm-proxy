@@ -69,5 +69,111 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+
+	// Migration: add ON DELETE CASCADE to usage and guardrail_events foreign keys.
+	// SQLite does not support ALTER TABLE to modify FK constraints, so we
+	// recreate the tables. We use marker tables to make this idempotent.
+	if err := migrateUsageCascade(db); err != nil {
+		return err
+	}
+	if err := migrateGuardrailEventsCascade(db); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// migrateUsageCascade recreates the usage table with ON DELETE CASCADE on both
+// api_key_id and provider_id foreign keys. Idempotent via a marker table.
+func migrateUsageCascade(db *sql.DB) error {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_migration_usage_cascade_v1'`).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil // already applied
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		`CREATE TABLE usage_new (
+			id                TEXT PRIMARY KEY,
+			api_key_id        TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+			provider_id       TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+			model             TEXT NOT NULL,
+			prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+			completion_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens      INTEGER NOT NULL DEFAULT 0,
+			created_at        DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`INSERT INTO usage_new SELECT * FROM usage`,
+		`DROP TABLE usage`,
+		`ALTER TABLE usage_new RENAME TO usage`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_api_key_id ON usage(api_key_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_provider_id ON usage(provider_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage(created_at)`,
+		`CREATE TABLE _migration_usage_cascade_v1 (applied_at DATETIME NOT NULL DEFAULT (datetime('now')))`,
+		`INSERT INTO _migration_usage_cascade_v1 DEFAULT VALUES`,
+	}
+
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// migrateGuardrailEventsCascade recreates the guardrail_events table with
+// ON DELETE CASCADE on api_key_id. Idempotent via a marker table.
+func migrateGuardrailEventsCascade(db *sql.DB) error {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_migration_guardrail_events_cascade_v1'`).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil // already applied
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		`CREATE TABLE guardrail_events_new (
+			id           TEXT PRIMARY KEY,
+			guardrail_id TEXT NOT NULL REFERENCES guardrails(id) ON DELETE CASCADE,
+			api_key_id   TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+			pattern      TEXT NOT NULL,
+			mode         TEXT NOT NULL,
+			input_text   TEXT NOT NULL,
+			created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`INSERT INTO guardrail_events_new SELECT * FROM guardrail_events`,
+		`DROP TABLE guardrail_events`,
+		`ALTER TABLE guardrail_events_new RENAME TO guardrail_events`,
+		`CREATE INDEX IF NOT EXISTS idx_guardrail_events_guardrail_id ON guardrail_events(guardrail_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_guardrail_events_api_key_id ON guardrail_events(api_key_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_guardrail_events_created_at ON guardrail_events(created_at)`,
+		`CREATE TABLE _migration_guardrail_events_cascade_v1 (applied_at DATETIME NOT NULL DEFAULT (datetime('now')))`,
+		`INSERT INTO _migration_guardrail_events_cascade_v1 DEFAULT VALUES`,
+	}
+
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
