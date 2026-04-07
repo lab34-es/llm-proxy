@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -13,24 +14,25 @@ import (
 
 // DashboardHandler serves all dashboard UI pages.
 type DashboardHandler struct {
-	providers  *store.ProviderStore
-	keys       *store.APIKeyStore
-	usage      *store.UsageStore
-	adminToken string
-	secret     string
-	// rawKeys caches the plaintext key for the playground (only available right after creation within the session).
-	// For the playground, we need the raw keys — they are passed from the DB lookup.
-	// Since raw keys are not stored, the playground uses keys created during this session.
+	providers       *store.ProviderStore
+	keys            *store.APIKeyStore
+	usage           *store.UsageStore
+	guardrails      *store.GuardrailStore
+	guardrailEvents *store.GuardrailEventStore
+	adminToken      string
+	secret          string
 }
 
 // NewDashboardHandler creates a new handler for the dashboard UI.
-func NewDashboardHandler(providers *store.ProviderStore, keys *store.APIKeyStore, usage *store.UsageStore, adminToken, secret string) *DashboardHandler {
+func NewDashboardHandler(providers *store.ProviderStore, keys *store.APIKeyStore, usage *store.UsageStore, guardrails *store.GuardrailStore, guardrailEvents *store.GuardrailEventStore, adminToken, secret string) *DashboardHandler {
 	return &DashboardHandler{
-		providers:  providers,
-		keys:       keys,
-		usage:      usage,
-		adminToken: adminToken,
-		secret:     secret,
+		providers:       providers,
+		keys:            keys,
+		usage:           usage,
+		guardrails:      guardrails,
+		guardrailEvents: guardrailEvents,
+		adminToken:      adminToken,
+		secret:          secret,
 	}
 }
 
@@ -373,6 +375,94 @@ func (h *DashboardHandler) PlaygroundPage(c echo.Context) error {
 		Title:  "Playground",
 		Active: "playground",
 		Keys:   keyInfos,
+	})
+}
+
+// ── Guardrails ─────────────────────────────────────────────────────────
+
+type guardrailsPageData struct {
+	Title      string
+	Active     string
+	Flash      string
+	Error      string
+	Guardrails []models.Guardrail
+	Events     []models.GuardrailEvent
+}
+
+func (h *DashboardHandler) GuardrailsPage(c echo.Context) error {
+	guardrails, err := h.guardrails.List()
+	if err != nil {
+		return h.renderError(c, "guardrails", "Failed to load guardrails: "+err.Error())
+	}
+	eventResult, err := h.guardrailEvents.List(store.GuardrailEventQuery{Limit: 50})
+	if err != nil {
+		return h.renderError(c, "guardrails", "Failed to load events: "+err.Error())
+	}
+	var events []models.GuardrailEvent
+	if eventResult != nil {
+		events = eventResult.Records
+	}
+	return c.Render(http.StatusOK, "guardrails", guardrailsPageData{
+		Title:      "Guardrails",
+		Active:     "guardrails",
+		Flash:      c.QueryParam("flash"),
+		Guardrails: guardrails,
+		Events:     events,
+	})
+}
+
+func (h *DashboardHandler) CreateGuardrail(c echo.Context) error {
+	pattern := c.FormValue("pattern")
+	mode := c.FormValue("mode")
+	replaceBy := c.FormValue("replace_by")
+
+	if pattern == "" || mode == "" {
+		return h.renderGuardrailsWithError(c, "Pattern and Mode are required.")
+	}
+	if mode != "reject" && mode != "replace" {
+		return h.renderGuardrailsWithError(c, "Mode must be 'reject' or 'replace'.")
+	}
+	if _, err := regexp.Compile(pattern); err != nil {
+		return h.renderGuardrailsWithError(c, "Invalid regex pattern: "+err.Error())
+	}
+
+	_, err := h.guardrails.Create(pattern, mode, replaceBy)
+	if err != nil {
+		return h.renderGuardrailsWithError(c, "Failed to create guardrail: "+err.Error())
+	}
+
+	return c.Redirect(http.StatusFound, "/dashboard/guardrails?flash=Guardrail+created+successfully")
+}
+
+func (h *DashboardHandler) DeleteGuardrail(c echo.Context) error {
+	id := c.Param("id")
+	if err := h.guardrails.Delete(id); err != nil {
+		return c.Redirect(http.StatusFound, "/dashboard/guardrails?flash=Failed+to+delete+guardrail")
+	}
+	return c.Redirect(http.StatusFound, "/dashboard/guardrails?flash=Guardrail+deleted")
+}
+
+func (h *DashboardHandler) DeleteGuardrailEvent(c echo.Context) error {
+	id := c.Param("id")
+	if err := h.guardrailEvents.Delete(id); err != nil {
+		return c.Redirect(http.StatusFound, "/dashboard/guardrails?flash=Failed+to+delete+event")
+	}
+	return c.Redirect(http.StatusFound, "/dashboard/guardrails?flash=Event+deleted")
+}
+
+func (h *DashboardHandler) renderGuardrailsWithError(c echo.Context, errMsg string) error {
+	guardrails, _ := h.guardrails.List()
+	eventResult, _ := h.guardrailEvents.List(store.GuardrailEventQuery{Limit: 50})
+	var events []models.GuardrailEvent
+	if eventResult != nil {
+		events = eventResult.Records
+	}
+	return c.Render(http.StatusOK, "guardrails", guardrailsPageData{
+		Title:      "Guardrails",
+		Active:     "guardrails",
+		Error:      errMsg,
+		Guardrails: guardrails,
+		Events:     events,
 	})
 }
 

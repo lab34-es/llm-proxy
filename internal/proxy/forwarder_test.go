@@ -24,13 +24,15 @@ func setupForwarder(t *testing.T) (*Forwarder, *store.UsageStore, string, string
 	ps := store.NewProviderStore(database)
 	ks := store.NewAPIKeyStore(database)
 	us := store.NewUsageStore(database)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
 
 	provider, err := ps.Create("test", "https://test.com", "sk-test")
 	require.NoError(t, err)
 	key, _, err := ks.Create("test-key", provider.ID, 0)
 	require.NoError(t, err)
 
-	f := NewForwarder(us)
+	f := NewForwarder(us, gs, ges)
 	return f, us, key.ID, provider.ID
 }
 
@@ -292,8 +294,12 @@ func TestNewForwarder(t *testing.T) {
 	defer database.Close()
 
 	us := store.NewUsageStore(database)
-	f := NewForwarder(us)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
+	f := NewForwarder(us, gs, ges)
 	assert.NotNil(t, f)
 	assert.NotNil(t, f.client)
 	assert.NotNil(t, f.usage)
+	assert.NotNil(t, f.guardrails)
+	assert.NotNil(t, f.guardrailEvents)
 }

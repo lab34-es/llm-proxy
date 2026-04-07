@@ -34,3 +34,24 @@ type UsageRecord struct {
 	TotalTokens      int       `json:"total_tokens"`
 	CreatedAt        time.Time `json:"created_at"`
 }
+
+// Guardrail represents a content filtering rule applied to outgoing LLM requests.
+type Guardrail struct {
+	ID        string    `json:"id"`
+	Pattern   string    `json:"pattern"`              // regular expression
+	Mode      string    `json:"mode"`                 // "reject" or "replace"
+	ReplaceBy string    `json:"replace_by,omitempty"` // replacement text when mode=replace
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// GuardrailEvent records when a "reject" guardrail was triggered.
+type GuardrailEvent struct {
+	ID          string    `json:"id"`
+	GuardrailID string    `json:"guardrail_id"`
+	APIKeyID    string    `json:"api_key_id"`
+	Pattern     string    `json:"pattern"`
+	Mode        string    `json:"mode"`
+	InputText   string    `json:"input_text"` // full message content that triggered the guardrail
+	CreatedAt   time.Time `json:"created_at"`
+}

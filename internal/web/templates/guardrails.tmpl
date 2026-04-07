@@ -1,0 +1,105 @@
+{{define "content"}}
+<h2>Guardrails</h2>
+
+<details>
+  <summary role="button" class="outline">Add Guardrail</summary>
+  <form method="POST" action="/dashboard/guardrails">
+    <label>
+      Pattern (Regular Expression)
+      <input type="text" name="pattern" placeholder="e.g. \bpassword\b" required>
+    </label>
+    <div class="grid">
+      <label>
+        Mode
+        <select name="mode" id="guardrail-mode" onchange="document.getElementById('replace-by-group').style.display = this.value === 'replace' ? 'block' : 'none'">
+          <option value="reject">Reject</option>
+          <option value="replace">Replace</option>
+        </select>
+      </label>
+      <label id="replace-by-group" style="display:none">
+        Replace With
+        <input type="text" name="replace_by" placeholder="e.g. [REDACTED]">
+      </label>
+    </div>
+    <button type="submit">Create Guardrail</button>
+  </form>
+</details>
+
+{{if .Guardrails}}
+<h3>Rules</h3>
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Pattern</th>
+      <th>Mode</th>
+      <th>Replace With</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Guardrails}}
+    <tr>
+      <td class="mono">{{shortID .ID}}</td>
+      <td class="mono">{{.Pattern}}</td>
+      <td><span class="badge {{if eq .Mode "reject"}}badge-revoked{{else}}badge-active{{end}}">{{.Mode}}</span></td>
+      <td>{{if eq .Mode "replace"}}{{.ReplaceBy}}{{else}}&mdash;{{end}}</td>
+      <td>{{formatTime .CreatedAt}}</td>
+      <td class="actions">
+        <form method="POST" action="/dashboard/guardrails/{{.ID}}/delete" style="display:inline"
+              onsubmit="return confirm('Delete this guardrail?')">
+          <button type="submit" class="outline secondary" style="padding:0.25rem 0.75rem;margin:0">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</figure>
+{{else}}
+<p>No guardrails configured yet. Add one above to get started.</p>
+{{end}}
+
+<hr>
+
+<h3>Recent Events</h3>
+{{if .Events}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Pattern</th>
+      <th>Mode</th>
+      <th>API Key</th>
+      <th>Input Text</th>
+      <th>Time</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Events}}
+    <tr>
+      <td class="mono">{{shortID .ID}}</td>
+      <td class="mono">{{.Pattern}}</td>
+      <td><span class="badge badge-revoked">{{.Mode}}</span></td>
+      <td class="mono">{{shortID .APIKeyID}}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{.InputText}}">{{.InputText}}</td>
+      <td>{{formatTime .CreatedAt}}</td>
+      <td class="actions">
+        <form method="POST" action="/dashboard/guardrail-events/{{.ID}}/delete" style="display:inline"
+              onsubmit="return confirm('Delete this event?')">
+          <button type="submit" class="outline secondary" style="padding:0.25rem 0.75rem;margin:0">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</figure>
+{{else}}
+<p>No guardrail events recorded yet.</p>
+{{end}}
+{{end}}

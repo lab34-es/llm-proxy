@@ -22,7 +22,9 @@ func TestChatCompletion_NoAPIKey(t *testing.T) {
 
 	ps := store.NewProviderStore(database)
 	us := store.NewUsageStore(database)
-	f := proxy.NewForwarder(us)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
+	f := proxy.NewForwarder(us, gs, ges)
 	h := NewProxyHandler(f, ps)
 
 	e := echo.New()
@@ -44,7 +46,9 @@ func TestChatCompletion_ProviderNotFound(t *testing.T) {
 
 	ps := store.NewProviderStore(database)
 	us := store.NewUsageStore(database)
-	f := proxy.NewForwarder(us)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
+	f := proxy.NewForwarder(us, gs, ges)
 	h := NewProxyHandler(f, ps)
 
 	e := echo.New()
@@ -72,7 +76,9 @@ func TestListModels_NoAPIKey(t *testing.T) {
 
 	ps := store.NewProviderStore(database)
 	us := store.NewUsageStore(database)
-	f := proxy.NewForwarder(us)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
+	f := proxy.NewForwarder(us, gs, ges)
 	h := NewProxyHandler(f, ps)
 
 	e := echo.New()
@@ -94,7 +100,9 @@ func TestListModels_ProviderNotFound(t *testing.T) {
 
 	ps := store.NewProviderStore(database)
 	us := store.NewUsageStore(database)
-	f := proxy.NewForwarder(us)
+	gs := store.NewGuardrailStore(database)
+	ges := store.NewGuardrailEventStore(database)
+	f := proxy.NewForwarder(us, gs, ges)
 	h := NewProxyHandler(f, ps)
 
 	e := echo.New()

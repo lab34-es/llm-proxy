@@ -29,6 +29,7 @@
       border-radius: 4px;
       font-size: 0.8em;
       font-weight: 600;
+      color: #fff;
     }
     .badge-active { background: var(--pico-ins-color); }
     .badge-revoked { background: var(--pico-del-color); }
@@ -47,6 +48,7 @@
       <li><a href="/dashboard/providers" {{if eq .Active "providers"}}aria-current="page"{{end}}>Providers</a></li>
       <li><a href="/dashboard/keys" {{if eq .Active "keys"}}aria-current="page"{{end}}>API Keys</a></li>
       <li><a href="/dashboard/usage" {{if eq .Active "usage"}}aria-current="page"{{end}}>Usage</a></li>
+      <li><a href="/dashboard/guardrails" {{if eq .Active "guardrails"}}aria-current="page"{{end}}>Guardrails</a></li>
       <li><a href="/dashboard/playground" {{if eq .Active "playground"}}aria-current="page"{{end}}>Playground</a></li>
       <li><a href="/dashboard/logout">Logout</a></li>
     </ul>
@@ -56,6 +58,15 @@
     {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
     {{template "content" .}}
   </main>
+  <footer class="container">
+    <hr>
+    <small>
+      <strong>LLM Proxy</strong> &middot;
+      <a href="/docs">API Docs</a> &middot;
+      <a href="https://lab34.es" target="_blank" rel="noopener">lab34.es</a> &middot;
+      Rendered in {{renderTime}}
+    </small>
+  </footer>
   <script src="/dashboard/static/app.js"></script>
 </body>
 </html>{{end}}

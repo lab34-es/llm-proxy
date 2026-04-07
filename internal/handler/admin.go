@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/lab34/llm-proxy/internal/store"
@@ -10,13 +11,15 @@ import (
 )
 
 type AdminHandler struct {
-	providers *store.ProviderStore
-	keys      *store.APIKeyStore
-	usage     *store.UsageStore
+	providers       *store.ProviderStore
+	keys            *store.APIKeyStore
+	usage           *store.UsageStore
+	guardrails      *store.GuardrailStore
+	guardrailEvents *store.GuardrailEventStore
 }
 
-func NewAdminHandler(p *store.ProviderStore, k *store.APIKeyStore, u *store.UsageStore) *AdminHandler {
-	return &AdminHandler{providers: p, keys: k, usage: u}
+func NewAdminHandler(p *store.ProviderStore, k *store.APIKeyStore, u *store.UsageStore, g *store.GuardrailStore, ge *store.GuardrailEventStore) *AdminHandler {
+	return &AdminHandler{providers: p, keys: k, usage: u, guardrails: g, guardrailEvents: ge}
 }
 
 // ── Providers ──────────────────────────────────────────────────────────
@@ -187,6 +190,105 @@ func (h *AdminHandler) QueryUsage(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, result)
+}
+
+// ── Guardrails ────────────────────────────────────────────────────────
+
+type createGuardrailReq struct {
+	Pattern   string `json:"pattern"`
+	Mode      string `json:"mode"`
+	ReplaceBy string `json:"replace_by"`
+}
+
+func (h *AdminHandler) CreateGuardrail(c echo.Context) error {
+	var req createGuardrailReq
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Pattern == "" || req.Mode == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "pattern and mode are required")
+	}
+	if req.Mode != "reject" && req.Mode != "replace" {
+		return echo.NewHTTPError(http.StatusBadRequest, "mode must be 'reject' or 'replace'")
+	}
+	// Validate the regex pattern.
+	if _, err := regexp.Compile(req.Pattern); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid regex pattern: "+err.Error())
+	}
+	g, err := h.guardrails.Create(req.Pattern, req.Mode, req.ReplaceBy)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusCreated, g)
+}
+
+func (h *AdminHandler) ListGuardrails(c echo.Context) error {
+	list, err := h.guardrails.List()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if list == nil {
+		return c.JSON(http.StatusOK, []interface{}{})
+	}
+	return c.JSON(http.StatusOK, list)
+}
+
+func (h *AdminHandler) GetGuardrail(c echo.Context) error {
+	g, err := h.guardrails.GetByID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if g == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "guardrail not found")
+	}
+	return c.JSON(http.StatusOK, g)
+}
+
+func (h *AdminHandler) DeleteGuardrail(c echo.Context) error {
+	if err := h.guardrails.Delete(c.Param("id")); err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "guardrail not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ── Guardrail Events ──────────────────────────────────────────────────
+
+func (h *AdminHandler) ListGuardrailEvents(c echo.Context) error {
+	q := store.GuardrailEventQuery{
+		GuardrailID: c.QueryParam("guardrail_id"),
+		APIKeyID:    c.QueryParam("api_key_id"),
+		Limit:       intParam(c, "limit", 100),
+		Offset:      intParam(c, "offset", 0),
+	}
+	result, err := h.guardrailEvents.List(q)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *AdminHandler) GetGuardrailEvent(c echo.Context) error {
+	ev, err := h.guardrailEvents.GetByID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if ev == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "guardrail event not found")
+	}
+	return c.JSON(http.StatusOK, ev)
+}
+
+func (h *AdminHandler) DeleteGuardrailEvent(c echo.Context) error {
+	if err := h.guardrailEvents.Delete(c.Param("id")); err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "guardrail event not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func intParam(c echo.Context, name string, def int) int {

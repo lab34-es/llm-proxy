@@ -20,6 +20,10 @@ tags:
     description: Manage proxy API keys issued to clients
   - name: Usage
     description: Query token usage and cost data
+  - name: Guardrails
+    description: Manage content filtering rules applied to outgoing LLM requests
+  - name: Guardrail Events
+    description: Audit log of guardrail rejections
   - name: Proxy
     description: OpenAI-compatible endpoints forwarded to upstream providers
 
@@ -217,6 +221,140 @@ paths:
               schema:
                 $ref: "#/components/schemas/UsageResponse"
 
+  # ── Admin: Guardrails ────────────────────────────────────────────────
+  /admin/guardrails:
+    get:
+      tags: [Guardrails]
+      summary: List guardrails
+      operationId: listGuardrails
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: List of guardrails
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Guardrail"
+    post:
+      tags: [Guardrails]
+      summary: Create a guardrail
+      operationId: createGuardrail
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGuardrailRequest"
+      responses:
+        "201":
+          description: Guardrail created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Guardrail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /admin/guardrails/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GuardrailID"
+    get:
+      tags: [Guardrails]
+      summary: Get a guardrail
+      operationId: getGuardrail
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: Guardrail details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Guardrail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Guardrails]
+      summary: Delete a guardrail
+      operationId: deleteGuardrail
+      security:
+        - AdminToken: []
+      responses:
+        "204":
+          description: Guardrail deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin: Guardrail Events ────────────────────────────────────────
+  /admin/guardrail-events:
+    get:
+      tags: [Guardrail Events]
+      summary: List guardrail events
+      operationId: listGuardrailEvents
+      security:
+        - AdminToken: []
+      parameters:
+        - name: guardrail_id
+          in: query
+          schema:
+            type: string
+        - name: api_key_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Guardrail events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailEventResponse"
+
+  /admin/guardrail-events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GuardrailEventID"
+    get:
+      tags: [Guardrail Events]
+      summary: Get a guardrail event
+      operationId: getGuardrailEvent
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: Guardrail event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailEvent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Guardrail Events]
+      summary: Delete a guardrail event
+      operationId: deleteGuardrailEvent
+      security:
+        - AdminToken: []
+      responses:
+        "204":
+          description: Guardrail event deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ── Proxy: OpenAI-compatible ──────────────────────────────────────────
   /v1/chat/completions:
     post:
@@ -292,6 +430,20 @@ components:
         type: string
         format: uuid
     APIKeyID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GuardrailID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GuardrailEventID:
       name: id
       in: path
       required: true
@@ -555,6 +707,84 @@ components:
                 example: model
               owned_by:
                 type: string
+
+    # ── Guardrail ──────────────────────────────────────────────────────
+    Guardrail:
+      type: object
+      required: [id, pattern, mode, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        pattern:
+          type: string
+          description: Regular expression pattern to match against message content
+          example: "\\bpassword\\b"
+        mode:
+          type: string
+          enum: [reject, replace]
+          description: Whether to reject the request or replace the matched text
+        replace_by:
+          type: string
+          description: Replacement text when mode is "replace"
+          example: "[REDACTED]"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateGuardrailRequest:
+      type: object
+      required: [pattern, mode]
+      properties:
+        pattern:
+          type: string
+          description: Regular expression pattern
+          example: "\\bpassword\\b"
+        mode:
+          type: string
+          enum: [reject, replace]
+        replace_by:
+          type: string
+          description: Replacement text (used when mode is "replace")
+          default: ""
+
+    # ── Guardrail Event ──────────────────────────────────────────────
+    GuardrailEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        guardrail_id:
+          type: string
+          format: uuid
+        api_key_id:
+          type: string
+          format: uuid
+        pattern:
+          type: string
+        mode:
+          type: string
+        input_text:
+          type: string
+          description: Full message content that triggered the guardrail
+        created_at:
+          type: string
+          format: date-time
+
+    GuardrailEventResponse:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuardrailEvent"
+        total:
+          type: integer
+          description: Total number of matching records
 
     Error:
       type: object
