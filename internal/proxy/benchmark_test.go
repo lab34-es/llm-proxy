@@ -239,9 +239,9 @@ func BenchmarkAPIKeyLookup(b *testing.B) {
 func BenchmarkGuardrailEvaluation(b *testing.B) {
 	env := setupBenchEnv(b)
 
-	messages := []chatMessage{
-		{Role: "system", Content: "You are a helpful assistant."},
-		{Role: "user", Content: "What is the capital of France? Please explain the history."},
+	messages := []json.RawMessage{
+		json.RawMessage(`{"role":"system","content":"You are a helpful assistant."}`),
+		json.RawMessage(`{"role":"user","content":"What is the capital of France? Please explain the history."}`),
 	}
 
 	// Warm the guardrail cache.

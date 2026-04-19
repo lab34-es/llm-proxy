@@ -45,6 +45,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Provider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags: [Providers]
       summary: Register a new upstream provider
@@ -66,6 +68,8 @@ paths:
                 $ref: "#/components/schemas/Provider"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /admin/providers/{id}:
     parameters:
@@ -83,6 +87,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Provider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -106,6 +112,8 @@ paths:
                 $ref: "#/components/schemas/Provider"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
@@ -117,6 +125,8 @@ paths:
       responses:
         "204":
           description: Provider deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -137,6 +147,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/APIKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags: [API Keys]
       summary: Create a proxy API key
@@ -158,6 +170,8 @@ paths:
                 $ref: "#/components/schemas/APIKeyCreated"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /admin/keys/{id}:
     parameters:
@@ -171,6 +185,8 @@ paths:
       responses:
         "204":
           description: API key revoked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -220,6 +236,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UsageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   # ── Admin: Guardrails ────────────────────────────────────────────────
   /admin/guardrails:
@@ -238,6 +256,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Guardrail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags: [Guardrails]
       summary: Create a guardrail
@@ -259,6 +279,8 @@ paths:
                 $ref: "#/components/schemas/Guardrail"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /admin/guardrails/{id}:
     parameters:
@@ -276,6 +298,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Guardrail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
@@ -287,6 +311,8 @@ paths:
       responses:
         "204":
           description: Guardrail deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -324,6 +350,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GuardrailEventResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /admin/guardrail-events/{id}:
     parameters:
@@ -341,6 +369,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GuardrailEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
@@ -352,6 +382,8 @@ paths:
       responses:
         "204":
           description: Guardrail event deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -381,6 +413,18 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "400":
+          description: Request rejected by a guardrail rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /v1/models:
     get:
@@ -396,6 +440,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   # ── Docs ──────────────────────────────────────────────────────────────
   /openapi.yaml:
@@ -407,6 +457,18 @@ paths:
           description: The OpenAPI YAML spec
           content:
             application/x-yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      summary: Swagger UI documentation
+      operationId: getSwaggerUI
+      responses:
+        "200":
+          description: Interactive Swagger UI HTML page
+          content:
+            text/html:
               schema:
                 type: string
 
@@ -458,8 +520,26 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadGateway:
+      description: Upstream provider error or provider not found
       content:
         application/json:
           schema:
@@ -581,6 +661,7 @@ components:
     # ── Usage ───────────────────────────────────────────────────────────
     UsageRecord:
       type: object
+      required: [id, api_key_id, provider_id, model, prompt_tokens, completion_tokens, total_tokens, created_at]
       properties:
         id:
           type: string
@@ -605,6 +686,7 @@ components:
 
     UsageResponse:
       type: object
+      required: [records, total]
       properties:
         records:
           type: array
@@ -648,13 +730,40 @@ components:
 
     ChatMessage:
       type: object
-      required: [role, content]
+      required: [role]
       properties:
         role:
           type: string
           enum: [system, user, assistant, tool]
         content:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Message content. May be null for assistant messages that contain tool_calls.
+        tool_call_id:
           type: string
+          description: Required for messages with role "tool". The ID of the tool call this message is responding to.
+        tool_calls:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                enum: [function]
+              function:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  arguments:
+                    type: string
+          description: Tool calls generated by the assistant.
+        name:
+          type: string
+          description: The name of the tool or function that generated this message.
 
     ChatCompletionResponse:
       type: object
@@ -754,6 +863,7 @@ components:
     # ── Guardrail Event ──────────────────────────────────────────────
     GuardrailEvent:
       type: object
+      required: [id, guardrail_id, api_key_id, pattern, mode, input_text, created_at]
       properties:
         id:
           type: string
@@ -777,6 +887,7 @@ components:
 
     GuardrailEventResponse:
       type: object
+      required: [records, total]
       properties:
         records:
           type: array

@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -286,6 +287,69 @@ func TestForwardListModels_UnreachableUpstream(t *testing.T) {
 	err := f.ForwardListModels(rec, req, provider)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "upstream request")
+}
+
+func TestForwardChatCompletion_ToolCallFieldsPreserved(t *testing.T) {
+	f, _, keyID, providerID := setupForwarder(t)
+
+	// Capture what the upstream actually receives.
+	var receivedBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		resp := map[string]interface{}{
+			"id":      "chatcmpl-123",
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer upstream.Close()
+
+	provider := &models.Provider{
+		ID:      providerID,
+		BaseURL: upstream.URL,
+		APIKey:  "sk-upstream",
+	}
+	apiKey := &models.APIKey{ID: keyID, ProviderID: providerID}
+
+	// Simulate a conversation with tool calls: user asks something, assistant
+	// responds with a tool_call, and then a tool message provides the result.
+	body := `{
+		"model": "gpt-4",
+		"messages": [
+			{"role": "user", "content": "What is the weather?"},
+			{"role": "assistant", "content": null, "tool_calls": [{"id": "call_abc123", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\":\"NYC\"}"}}]},
+			{"role": "tool", "tool_call_id": "call_abc123", "content": "{\"temp\": 72}"}
+		],
+		"tools": [{"type": "function", "function": {"name": "get_weather"}}]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	err := f.ForwardChatCompletion(rec, req, provider, apiKey)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// Parse what the upstream received and verify tool fields are intact.
+	var parsed map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(receivedBody, &parsed))
+
+	var messages []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(parsed["messages"], &messages))
+	require.Len(t, messages, 3)
+
+	// Message 1 (assistant): must have tool_calls.
+	assert.NotNil(t, messages[1]["tool_calls"], "assistant message must preserve tool_calls")
+	assert.Contains(t, string(messages[1]["tool_calls"]), "call_abc123")
+
+	// Message 2 (tool): must have tool_call_id.
+	assert.NotNil(t, messages[2]["tool_call_id"], "tool message must preserve tool_call_id")
+	assert.Contains(t, string(messages[2]["tool_call_id"]), "call_abc123")
+
+	// Verify tools field is also preserved at top level.
+	assert.NotNil(t, parsed["tools"], "top-level tools field must be preserved")
 }
 
 func TestNewForwarder(t *testing.T) {

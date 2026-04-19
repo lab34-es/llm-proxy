@@ -115,10 +115,10 @@ func TestGuardrail_ReplaceMode(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the messages were modified before forwarding.
-	var messages []chatMessage
+	var messages []map[string]json.RawMessage
 	json.Unmarshal(receivedBody["messages"], &messages)
 	require.Len(t, messages, 1)
-	assert.Equal(t, "the code is [REDACTED] and [REDACTED]", messages[0].Content)
+	assert.Equal(t, "the code is [REDACTED] and [REDACTED]", extractTextContent(messages[0]["content"]))
 }
 
 func TestGuardrail_NoMatchPassesThrough(t *testing.T) {
@@ -222,10 +222,10 @@ func TestGuardrail_ReplaceOnAssistantMessage(t *testing.T) {
 	err = f.ForwardChatCompletion(rec, req, provider, apiKey)
 	require.NoError(t, err)
 
-	var messages []chatMessage
+	var messages []map[string]json.RawMessage
 	json.Unmarshal(receivedBody["messages"], &messages)
 	require.Len(t, messages, 1)
-	assert.Equal(t, "this is [REDACTED] data", messages[0].Content)
+	assert.Equal(t, "this is [REDACTED] data", extractTextContent(messages[0]["content"]))
 }
 
 func TestGuardrail_MultipleRules(t *testing.T) {
@@ -299,7 +299,7 @@ func TestGuardrail_CacheRefresh(t *testing.T) {
 	f, gs, _, keyID, providerID := setupGuardrailForwarder(t)
 
 	// Initially no guardrails.
-	messages := []chatMessage{{Role: "user", Content: "password"}}
+	messages := []json.RawMessage{json.RawMessage(`{"role":"user","content":"password"}`)}
 	result, err := f.applyGuardrails(messages, keyID)
 	require.NoError(t, err)
 	assert.Len(t, result, 1) // no change
@@ -310,8 +310,90 @@ func TestGuardrail_CacheRefresh(t *testing.T) {
 
 	result, err = f.applyGuardrails(messages, keyID)
 	require.NoError(t, err)
-	assert.Equal(t, "***", result[0].Content)
+	var hdr chatMessageHeader
+	json.Unmarshal(result[0], &hdr)
+	assert.Equal(t, "***", extractTextContent(hdr.Content))
 	_ = providerID
+}
+
+func TestGuardrail_ToolCallFieldsPreservedDuringReplace(t *testing.T) {
+	f, gs, _, keyID, providerID := setupGuardrailForwarder(t)
+
+	// Replace guardrail that matches user message content.
+	_, err := gs.Create(`weather`, "replace", "climate")
+	require.NoError(t, err)
+
+	var receivedBody map[string]json.RawMessage
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		resp := map[string]interface{}{
+			"id":      "chatcmpl-123",
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer upstream.Close()
+
+	provider := &models.Provider{
+		ID:      providerID,
+		BaseURL: upstream.URL,
+		APIKey:  "sk-upstream",
+	}
+	apiKey := &models.APIKey{ID: keyID, ProviderID: providerID}
+
+	// Conversation with tool calls; the user message contains "weather" which triggers replace.
+	body := `{
+		"model": "gpt-4",
+		"messages": [
+			{"role": "user", "content": "What is the weather?"},
+			{"role": "assistant", "content": null, "tool_calls": [{"id": "call_abc123", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]},
+			{"role": "tool", "tool_call_id": "call_abc123", "content": "{\"temp\": 72}"}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	err = f.ForwardChatCompletion(rec, req, provider, apiKey)
+	require.NoError(t, err)
+
+	// Parse the upstream body.
+	var messages []map[string]json.RawMessage
+	json.Unmarshal(receivedBody["messages"], &messages)
+	require.Len(t, messages, 3)
+
+	// User message should have been replaced.
+	var userContent string
+	json.Unmarshal(messages[0]["content"], &userContent)
+	assert.Equal(t, "What is the climate?", userContent)
+
+	// Assistant tool_calls must be preserved.
+	assert.NotNil(t, messages[1]["tool_calls"], "assistant tool_calls must survive guardrail replace")
+	assert.Contains(t, string(messages[1]["tool_calls"]), "call_abc123")
+
+	// Tool message tool_call_id must be preserved.
+	assert.NotNil(t, messages[2]["tool_call_id"], "tool_call_id must survive guardrail replace")
+	assert.Contains(t, string(messages[2]["tool_call_id"]), "call_abc123")
+}
+
+func TestGuardrail_ToolMessageSkippedByGuardrails(t *testing.T) {
+	f, gs, _, keyID, _ := setupGuardrailForwarder(t)
+
+	// A guardrail that would match tool output content.
+	_, err := gs.Create(`temp`, "reject", "")
+	require.NoError(t, err)
+
+	// Tool message contains "temp" but should be skipped by guardrails.
+	messages := []json.RawMessage{
+		json.RawMessage(`{"role":"user","content":"What is the weather?"}`),
+		json.RawMessage(`{"role":"tool","tool_call_id":"call_abc123","content":"{\"temp\": 72}"}`),
+	}
+
+	result, err := f.applyGuardrails(messages, keyID)
+	require.NoError(t, err)
+	assert.Len(t, result, 2, "tool message should not be rejected")
 }
 
 func TestGuardrailRejectedError_Message(t *testing.T) {

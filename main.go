@@ -2,9 +2,7 @@ package main
 
 import (
 	_ "embed"
-	"io/fs"
 	"log"
-	"net/http"
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
@@ -46,7 +44,6 @@ func main() {
 	forwarder := proxy.NewForwarder(usageStore, guardrailStore, guardrailEventStore)
 	proxyH := handler.NewProxyHandler(forwarder, providerStore)
 	docsH := handler.NewDocsHandler(specBytes)
-	dashH := web.NewDashboardHandler(providerStore, keyStore, usageStore, guardrailStore, guardrailEventStore, cfg.AdminToken, cfg.SessionSecret)
 
 	// Middleware.
 	rateLimiter := middleware.NewRateLimiter()
@@ -54,7 +51,6 @@ func main() {
 	// Echo setup.
 	e := echo.New()
 	e.HideBanner = true
-	e.Renderer = web.NewRenderer()
 	e.Use(echomw.Logger())
 	e.Use(echomw.Recover())
 
@@ -62,31 +58,10 @@ func main() {
 	e.GET("/openapi.yaml", docsH.Spec)
 	e.GET("/docs", docsH.SwaggerUI)
 
-	// ── Dashboard (template-based UI) ──────────────────────────────────
-	dash := e.Group("/dashboard")
-	dash.GET("", dashH.Index)
-	dash.GET("/login", dashH.LoginPage)
-	dash.POST("/login", dashH.LoginSubmit)
-	dash.GET("/logout", dashH.Logout)
-
-	// Serve embedded static assets.
-	staticFS, _ := fs.Sub(web.StaticFS, "static")
-	dash.GET("/static/*", echo.WrapHandler(http.StripPrefix("/dashboard/static/", http.FileServer(http.FS(staticFS)))))
-
-	// Protected dashboard routes.
-	dashAuth := dash.Group("", web.SessionAuth(cfg.AdminToken, cfg.SessionSecret))
-	dashAuth.GET("/providers", dashH.ProvidersPage)
-	dashAuth.POST("/providers", dashH.CreateProvider)
-	dashAuth.POST("/providers/:id/delete", dashH.DeleteProvider)
-	dashAuth.GET("/keys", dashH.KeysPage)
-	dashAuth.POST("/keys", dashH.CreateKey)
-	dashAuth.POST("/keys/:id/revoke", dashH.RevokeKey)
-	dashAuth.GET("/usage", dashH.UsagePage)
-	dashAuth.GET("/guardrails", dashH.GuardrailsPage)
-	dashAuth.POST("/guardrails", dashH.CreateGuardrail)
-	dashAuth.POST("/guardrails/:id/delete", dashH.DeleteGuardrail)
-	dashAuth.POST("/guardrail-events/:id/delete", dashH.DeleteGuardrailEvent)
-	dashAuth.GET("/playground", dashH.PlaygroundPage)
+	// ── Dashboard (React SPA) ──────────────────────────────────────────
+	spaHandler := web.SPAHandler()
+	e.GET("/dashboard", spaHandler)
+	e.GET("/dashboard/*", spaHandler)
 
 	// ── Admin routes (admin token auth) ────────────────────────────────
 	admin := e.Group("/admin", middleware.AdminAuth(cfg.AdminToken))

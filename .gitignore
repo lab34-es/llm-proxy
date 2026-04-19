@@ -1,3 +1,9 @@
 llm-proxy.db
 llm-proxy.db-shm
 llm-proxy.db-wal
+llm-proxy
+coverage.out
+
+# Frontend
+internal/web/frontend/node_modules/
+internal/web/frontend/dist/

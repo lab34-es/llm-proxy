@@ -37,13 +37,41 @@ All configuration is via environment variables:
 | `DSN` | `llm-proxy.db` | SQLite database file path |
 | `ADMIN_TOKEN` | *(required)* | Bearer token for `/admin/*` endpoints and dashboard login |
 
+## Development
+
+Run both the Go backend and the React (Vite) frontend in a single command:
+
+```bash
+./development.sh
+```
+
+This starts the Go backend on `:8080` and the Vite dev server on `:5173` with hot reload. The dashboard is available at http://localhost:5173/dashboard.
+
+The `ADMIN_TOKEN` defaults to `admin` in development. Override it with:
+
+```bash
+ADMIN_TOKEN=my-secret ./development.sh
+```
+
+**Prerequisites:** Go 1.25+, Node.js 22+.
+
+### Production build
+
+```bash
+cd internal/web/frontend && npm ci && npm run build && cd -
+go build -trimpath -ldflags="-s -w" -o llm-proxy .
+```
+
+This produces a single binary with the React dashboard embedded.
+
 ## Project structure
 
 ```
 llm-proxy/
 ├── openapi.yaml                    # OpenAPI 3.1 spec (embedded at compile time)
 ├── main.go                         # Entrypoint
-├── Dockerfile                      # Container image build
+├── development.sh                  # Start frontend + backend for local dev
+├── Dockerfile                      # Multi-stage build (Node + Go)
 ├── docker-compose.yml              # Local dev / deployment
 └── internal/
     ├── config/config.go            # Environment-based configuration
@@ -66,11 +94,15 @@ llm-proxy/
     │   └── docs.go                 # Swagger UI + spec serving
     ├── proxy/forwarder.go          # Upstream request forwarding + guardrail enforcement
     └── web/
-        ├── handlers.go             # Dashboard route handlers
-        ├── renderer.go             # Template rendering
-        ├── session.go              # Session management
-        ├── templates/              # HTML templates (layout, login, usage, etc.)
-        └── static/                 # CSS and JS assets
+        ├── spa.go                  # SPA handler (embeds frontend/dist/)
+        └── frontend/               # React app (Vite + TypeScript + MUI Joy)
+            ├── src/
+            │   ├── api/client.ts   # API client for /admin/* endpoints
+            │   ├── context/        # Auth context (localStorage token)
+            │   ├── components/     # Layout (sidebar), DismissibleAlert
+            │   └── pages/          # Providers, Keys, Usage, Guardrails, Playground
+            ├── vite.config.ts
+            └── package.json
 ```
 
 ## Benchmarks

@@ -42,14 +42,52 @@ func NewForwarder(usage *store.UsageStore, guardrails *store.GuardrailStore, gua
 
 // chatRequest is the minimal structure we need to inspect from the incoming body.
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Stream   bool          `json:"stream"`
-	Messages []chatMessage `json:"messages"`
+	Model    string            `json:"model"`
+	Stream   bool              `json:"stream"`
+	Messages []json.RawMessage `json:"messages"`
 }
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+// chatMessageHeader contains only the fields needed for guardrail inspection.
+// Messages are kept as json.RawMessage to preserve all fields (tool_call_id,
+// tool_calls, name, etc.) without needing to enumerate them.
+type chatMessageHeader struct {
+	Role      string          `json:"role"`
+	Content   json.RawMessage `json:"content"`
+	ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+}
+
+// extractTextContent extracts a plain-text string from a Content field that may
+// be a JSON string, an array of content blocks, or null.
+func extractTextContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	// Try plain string first (most common).
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	// Try array of content blocks (OpenAI multimodal format).
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// textToContentRaw wraps a plain string back into a json.RawMessage string literal.
+func textToContentRaw(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
 }
 
 // GuardrailRejectedError is returned when a reject guardrail matches.
@@ -92,8 +130,10 @@ func (f *Forwarder) loadGuardrails() ([]models.Guardrail, error) {
 }
 
 // applyGuardrails checks all messages against guardrail rules.
+// Messages are kept as json.RawMessage so that unknown fields (tool_call_id,
+// tool_calls, name, function_call, etc.) are never lost during re-serialization.
 // Returns the (possibly modified) messages, or an error if a reject rule matches.
-func (f *Forwarder) applyGuardrails(messages []chatMessage, apiKeyID string) ([]chatMessage, error) {
+func (f *Forwarder) applyGuardrails(messages []json.RawMessage, apiKeyID string) ([]json.RawMessage, error) {
 	rules, err := f.loadGuardrails()
 	if err != nil {
 		return messages, err
@@ -117,12 +157,25 @@ func (f *Forwarder) applyGuardrails(messages []chatMessage, apiKeyID string) ([]
 	}
 
 	// Check each message against all rules.
-	result := make([]chatMessage, len(messages))
+	result := make([]json.RawMessage, len(messages))
 	copy(result, messages)
 
-	for i, msg := range result {
+	for i, raw := range result {
+		// Parse only the header fields we need for guardrail inspection.
+		var hdr chatMessageHeader
+		if err := json.Unmarshal(raw, &hdr); err != nil {
+			continue
+		}
+
+		// Skip tool-result messages and assistant messages with tool_calls;
+		// their content is structured data that should not be guardrail-processed.
+		if hdr.Role == "tool" || (hdr.Role == "assistant" && len(hdr.ToolCalls) > 0) {
+			continue
+		}
+
+		text := extractTextContent(hdr.Content)
 		for _, cr := range compiled {
-			if !cr.re.MatchString(msg.Content) {
+			if !cr.re.MatchString(text) {
 				continue
 			}
 
@@ -130,12 +183,20 @@ func (f *Forwarder) applyGuardrails(messages []chatMessage, apiKeyID string) ([]
 			case "reject":
 				// Record the event.
 				if f.guardrailEvents != nil {
-					_ = f.recordGuardrailEvent(cr.guardrail, apiKeyID, msg.Content)
+					_ = f.recordGuardrailEvent(cr.guardrail, apiKeyID, text)
 				}
 				return nil, &GuardrailRejectedError{Pattern: cr.guardrail.Pattern}
 
 			case "replace":
-				result[i].Content = cr.re.ReplaceAllString(result[i].Content, cr.guardrail.ReplaceBy)
+				text = cr.re.ReplaceAllString(text, cr.guardrail.ReplaceBy)
+				// Update only the "content" field in the raw JSON, preserving all other fields.
+				var obj map[string]json.RawMessage
+				if err := json.Unmarshal(raw, &obj); err == nil {
+					obj["content"] = textToContentRaw(text)
+					if updated, err := json.Marshal(obj); err == nil {
+						result[i] = updated
+					}
+				}
 			}
 		}
 	}
@@ -189,9 +250,8 @@ func (f *Forwarder) ForwardChatCompletion(
 		if err != nil {
 			return err // will be *GuardrailRejectedError for reject mode
 		}
-		// If messages were modified (replace mode), re-serialize the body.
-		req.Messages = filtered
-		// Re-marshal the full request body with updated messages.
+		// Re-marshal the full request body preserving all top-level fields,
+		// replacing only the messages array.
 		var rawBody map[string]json.RawMessage
 		if err := json.Unmarshal(body, &rawBody); err == nil {
 			if updatedMessages, err := json.Marshal(filtered); err == nil {
