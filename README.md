@@ -15,6 +15,21 @@ An OpenAI-compatible LLM proxy that routes requests to any OpenAI-compatible bac
 - **Dashboard** -- web UI for monitoring usage and managing resources
 - **Guardrails** -- configurable safety rules to change or reject LLM interactions
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><strong>Usage</strong><br/><a href="docs/screenshots/usage.png"><img src="docs/screenshots/usage.png" alt="Usage" width="300" /></a><br/>Token usage stats and request metrics</td>
+    <td align="center"><strong>Providers</strong><br/><a href="docs/screenshots/providers.png"><img src="docs/screenshots/providers.png" alt="Providers" width="300" /></a><br/>Upstream LLM backend configuration</td>
+    <td align="center"><strong>API Keys</strong><br/><a href="docs/screenshots/api_keys.png"><img src="docs/screenshots/api_keys.png" alt="API Keys" width="300" /></a><br/>API key issuance and management</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Guardrails</strong><br/><a href="docs/screenshots/guardrails.png"><img src="docs/screenshots/guardrails.png" alt="Guardrails" width="300" /></a><br/>Safety rules and content filtering</td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
 ## Quick start
 
 ```bash
@@ -25,7 +40,7 @@ go build -o llm-proxy .
 ADMIN_TOKEN=my-secret-admin-token ./llm-proxy
 ```
 
-The server starts on `:8080` by default. Open http://localhost:8080/docs for the Swagger UI.
+The server starts on `:8080` by default. Open http://localhost:8080/docs for the Swagger UI. The dashboard is available at http://localhost:8080/dashboard.
 
 ## Configuration
 

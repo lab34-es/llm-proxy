@@ -153,3 +153,37 @@ func TestProviderStore_Delete_NotFound(t *testing.T) {
 	err := s.Delete("nonexistent")
 	assert.Equal(t, sql.ErrNoRows, err)
 }
+
+func TestProviderStore_Delete_CascadesUsageAndEvents(t *testing.T) {
+	database := setupTestDB(t)
+	ps := NewProviderStore(database)
+	ks := NewAPIKeyStore(database)
+	us := NewUsageStore(database)
+	gs := NewGuardrailStore(database)
+	ges := NewGuardrailEventStore(database)
+
+	// Create a provider, key, usage record, and guardrail event.
+	p, err := ps.Create("cascade-test", "https://cascade.com", "key")
+	require.NoError(t, err)
+
+	k, _, err := ks.Create("test-key", p.ID, 60)
+	require.NoError(t, err)
+
+	err = us.Record(k.ID, p.ID, "gpt-4", 100, 50, 150)
+	require.NoError(t, err)
+
+	g, err := gs.Create("secret-\\d+", "reject", "")
+	require.NoError(t, err)
+
+	_, err = ges.Record(g.ID, k.ID, "secret-\\d+", "reject", "secret-123")
+	require.NoError(t, err)
+
+	// Deleting the provider should succeed (cascade: provider → api_keys → usage + guardrail_events).
+	err = ps.Delete(p.ID)
+	assert.NoError(t, err)
+
+	// Verify provider is gone.
+	got, err := ps.GetByID(p.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}

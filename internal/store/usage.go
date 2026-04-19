@@ -37,8 +37,11 @@ type UsageQuery struct {
 }
 
 type UsageResult struct {
-	Records []models.UsageRecord `json:"records"`
-	Total   int                  `json:"total"`
+	Records          []models.UsageRecord `json:"records"`
+	Total            int                  `json:"total"`
+	PromptTokens     int                  `json:"prompt_tokens"`
+	CompletionTokens int                  `json:"completion_tokens"`
+	TotalTokens      int                  `json:"total_tokens"`
 }
 
 func (s *UsageStore) Query(q UsageQuery) (*UsageResult, error) {
@@ -67,10 +70,10 @@ func (s *UsageStore) Query(q UsageQuery) (*UsageResult, error) {
 		whereClause = " WHERE " + strings.Join(where, " AND ")
 	}
 
-	// Count total.
-	var total int
-	countQ := "SELECT COUNT(*) FROM usage" + whereClause
-	if err := s.db.QueryRow(countQ, args...).Scan(&total); err != nil {
+	// Count total and aggregate token sums across all matching records.
+	var total, sumPrompt, sumCompletion, sumTotal int
+	countQ := "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0) FROM usage" + whereClause
+	if err := s.db.QueryRow(countQ, args...).Scan(&total, &sumPrompt, &sumCompletion, &sumTotal); err != nil {
 		return nil, fmt.Errorf("count usage: %w", err)
 	}
 
@@ -101,5 +104,11 @@ func (s *UsageStore) Query(q UsageQuery) (*UsageResult, error) {
 		return nil, err
 	}
 
-	return &UsageResult{Records: records, Total: total}, nil
+	return &UsageResult{
+		Records:          records,
+		Total:            total,
+		PromptTokens:     sumPrompt,
+		CompletionTokens: sumCompletion,
+		TotalTokens:      sumTotal,
+	}, nil
 }
